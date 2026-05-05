@@ -5,8 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-#include "avmplus.h"
+#include "avmplus.h"+
 #include "BuiltinNatives.h"
+#include <dlfcn.h>      // For dlopen, dlsym
+#include <sys/reboot.h> // For reboot()
+#include <unistd.h>     // For sync()
 
 namespace avmplus
 {
@@ -1755,16 +1758,55 @@ namespace avmplus
 
     // --- eOS Native Injections Start ---
     // native UniversalNativeCall
-    NativeID Toplevel_UniversalNativeCall(MethodEnv, uint32_t argc, AvmBox* argv) {
+    NativeID Toplevel_UniversalNativeCall(MethodEnv env, uint32_t argc, AvmBox* argv) {
+        // We need at least: [0] library path, [1] function name
         if (argc < 2) return nullObjectAtom;
-        // ... (rest of the code I gave you)
+
+        // Extract strings from AvmBox
+        Stringp libPath = env->core()->atomToString(avm_from_box(argv[0]));
+        Stringp funcName = env->core()->atomToString(avm_from_box(argv[1]));
+
+        // Convert Flash Strings to C-strings (UTF8)
+        StUTF8String cLibPath(libPath);
+        StUTF8String cFuncName(funcName);
+
+        // Load the shared object (.so)
+        void* handle = dlopen(cLibPath.c_str(), RTLD_LAZY);
+        if (!handle) {
+            // Optional: trace(dlerror()) could be added here for debugging
+            return nullObjectAtom;
+        }
+
+        // Define a function pointer that accepts the rest of the arguments
+        typedef void (*eos_entry)(AvmBox*, uint32_t);
+        eos_entry f = (eos_entry)dlsym(handle, cFuncName.c_str());
+
+        if (f) {
+            // Call the function, passing the remaining arguments and count
+            f(&argv[2], argc - 2); 
+        }
+
+        // We don't dlclose here if we want the library to stay resident
         return nullObjectAtom;
     }
 
     // native SysPowerAction
-    NativeID Toplevel_SysPowerAction(MethodEnv, uint32_t argc, AvmBox* argv) {
-        int action = avm_box_to_int(argv[0]); 
-        if (action == 1) reboot(RB_AUTOBOOT);
+    NativeID Toplevel_SysPowerAction(MethodEnv env, uint32_t argc, AvmBox* argv) {
+        if (argc < 1) return nullObjectAtom;
+
+        // Convert the first argument to an integer
+        int action = env->core()->integer(avm_from_box(argv[0])); 
+        
+        if (action == 1) {
+            // Action 1: Reboot
+            sync(); // Flush filesystem buffers before hard reboot
+            reboot(RB_AUTOBOOT);
+        } else if (action == 2) {
+            // Action 2: Power Off (Optional addition)
+            sync();
+            reboot(RB_POWER_OFF);
+        }
+        
         return nullObjectAtom;
     }
     // --- eOS Native Injections End ---
