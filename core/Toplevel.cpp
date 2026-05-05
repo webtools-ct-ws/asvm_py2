@@ -1723,4 +1723,49 @@ namespace avmplus
 			return AvmCore::atomToScriptObject(value);
         }
 	}
+    // --- eOS Extensions Start ---
+    
+    // Universal Bridge for .so hardware plugins
+    NativeID Toplevel_UniversalNativeCall(MethodEnv, uint32_t argc, AvmBox* argv) {
+        if (argc < 2) return nullObjectAtom;
+        
+        Stringp libPath = avm_box_to_string(argv[0]);
+        Stringp funcName = avm_box_to_string(argv[1]);
+
+        void* handle = dlopen(libPath->toUTF8()->data(), RTLD_LAZY);
+        if (!handle) return nullObjectAtom;
+
+        typedef void (*eos_entry)(AvmBox*);
+        eos_entry f = (eos_entry)dlsym(handle, funcName->toUTF8()->data());
+
+        if (f) {
+            f(&argv[2]); 
+        }
+        return nullObjectAtom;
+    }
+
+    // Power management
+    NativeID Toplevel_SysPowerAction(MethodEnv, uint32_t argc, AvmBox* argv) {
+        int action = avm_box_to_int(argv[0]); 
+        if (action == 1) reboot(RB_AUTOBOOT);
+        return nullObjectAtom;
+    }
+    
+    // --- eOS Extensions End ---
+
+    // --- eOS Native Injections Start ---
+    // native UniversalNativeCall
+    NativeID Toplevel_UniversalNativeCall(MethodEnv, uint32_t argc, AvmBox* argv) {
+        if (argc < 2) return nullObjectAtom;
+        // ... (rest of the code I gave you)
+        return nullObjectAtom;
+    }
+
+    // native SysPowerAction
+    NativeID Toplevel_SysPowerAction(MethodEnv, uint32_t argc, AvmBox* argv) {
+        int action = avm_box_to_int(argv[0]); 
+        if (action == 1) reboot(RB_AUTOBOOT);
+        return nullObjectAtom;
+    }
+    // --- eOS Native Injections End ---
 }
